@@ -6,6 +6,7 @@ from PySide2.QtCore import (
 )
 
 import win32gui
+import win32con
 
 class WindowMonitor:
     '''
@@ -61,6 +62,12 @@ class WindowMonitor:
 
     def _scan_windows(self):
         def window_selector(handle, argument):
+            # styles = win32gui.GetWindowLong(handle, win32con.GWL_STYLE)
+            extended_styles = win32gui.GetWindowLong(handle, win32con.GWL_EXSTYLE)
+
+            if extended_styles & win32con.WS_EX_TOOLWINDOW:
+                return
+
             rectangles, z_positions = argument
             left, top, right, bottom = win32gui.GetWindowRect(handle)
             rectangles.append(

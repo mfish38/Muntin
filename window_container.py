@@ -30,7 +30,10 @@ import win32con
 from window_capture import capture_window
 from window_monitor import WindowMonitor
 
+from hooks import MouseSignaler
+
 user32 = ctypes.windll.user32
+
 
 class Container(QFrame):
     mouse_over = Signal()
@@ -69,6 +72,8 @@ class Container(QFrame):
         style |= win32con.WS_BORDER
         win32gui.SetWindowLong(window_handle, win32con.GWL_STYLE, style)
 
+        # TODO: why does this break this?
+        self._sync_needed = True
         self._sync_window()
 
     def _sync_window(self):
@@ -80,7 +85,6 @@ class Container(QFrame):
         size = self.size()
         pos = self.mapToGlobal(QPoint(0,0))
 
-        SWP_ASYNCWINDOWPOS = 0x4000
         user32.SetWindowPos(
             self._handle,
             self.effectiveWinId(),
@@ -88,7 +92,7 @@ class Container(QFrame):
             pos.y(),
             size.width(),
             size.height(),
-            SWP_ASYNCWINDOWPOS
+            win32con.SWP_ASYNCWINDOWPOS #| win32con.SWP_HIDEWINDOW
         )
 
         self._image = capture_window(self._handle)
@@ -128,6 +132,21 @@ class WindowSplitter(QFrame):
 
         self._containers = {}
 
+        self._entered_handle = None
+
+        MouseSignaler.left_up.connect(self._left_mouse_up)
+
+    def _left_mouse_up(self):
+        entered_handle = self._entered_handle
+        if entered_handle is None:
+            return
+
+        def function():
+            self.add_window(entered_handle)
+        QTimer.singleShot(0, function)
+        # self.add_window(entered_handle)
+        self._entered_handle = None
+
     def overlap_enter_event(self, handle, rectangle):
         if self._root.moving:
             return
@@ -135,7 +154,8 @@ class WindowSplitter(QFrame):
         if handle in self._containers:
             return
 
-        self.add_window(handle)
+        self._entered_handle = handle
+        # self.add_window(handle)
 
     def overlap_move_event(self, handle, rectangle):
         if self._root.moving:
@@ -147,9 +167,19 @@ class WindowSplitter(QFrame):
         if self._root.moving:
             return
 
+        # Don't remove the window unless it left being dragged.
+        if not MouseSignaler.left_is_down:
+            return
+
+        self._entered_handle = None
+
         containers = self._containers
         if handle not in containers:
             return
+
+        # this happens because after grabbing the window it is under the current which counts as an exit leave!!!
+        # only exit if exits while the mouse is down?
+        print('exiting?')
 
         self._root.remove_handle_to_move_under(handle)
         container = self._containers.pop(handle)
